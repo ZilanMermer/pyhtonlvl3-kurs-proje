@@ -1,64 +1,212 @@
-# KariyerPusulasi 🤖
+import discord
+from discord import app_commands
+import sqlite3
+import random
 
-## Proje Hakkında
-KariyerPusulasi, kullanıcıların ilgi alanlarına göre kendilerine uygun meslekleri keşfetmelerine yardımcı olmak amacıyla geliştirdiğim bir Discord botudur. Kullanıcılar ilgi alanlarını seçerek bu alanlara uygun meslek önerileri alabilir ve mesleklerin açıklamalarını ve gerekli becerilerini öğrenebilir.
+TOKEN = "token_yaz"
 
-## Projenin Amacı
-Bu projeyi, insanların ilgi duydukları alanlara göre farklı meslekleri tanımalarını ve kariyer seçenekleri hakkında fikir edinmelerini sağlamak amacıyla geliştirdim.
+intents = discord.Intents.default()
+intents.message_content = True                 
 
-## Kullanılan Teknolojiler
-- Python
-- Discord.py
-- Discord Slash Commands
-- SQLite3
-- Random kütüphanesi
+bot = discord.Client(intents=intents)
+komutlar = app_commands.CommandTree(bot)
 
-## Özellikler
+# veritabanini olustur
+db = sqlite3.connect("kariyer.db")
+imlec = db.cursor()
 
-- **/basla:** Kariyer keşfine başlamayı ve ilgi alanı seçmeyi sağlar.
-- **/sonuc:** Seçilen ilgi alanına uygun rastgele bir meslek önerir.
-- **Meslek bilgileri:** Mesleklerin açıklamalarını ve gerekli becerilerini gösterir.
-- **Otomatik bilgilendirme:** Mesajlarda "meslek" kelimesi geçtiğinde kullanıcıya botun komutlarını hatırlatır.
-- **Veritabanı:** Kullanıcıların seçtiği alanları ve meslek bilgilerini SQLite veritabanında saklar.
+#Discord'da kariyer botu yapmak için gerekli kütüphaneleri ekledim, botu oluşturdum ve bilgileri kaydetmek için veritabanını hazırladım.
 
-## İlgi Alanları
-Kullanıcılar aşağıdaki alanlardan birini seçebilir:
 
-- Teknoloji
-- Sanat
-- Sağlık
-- İnsan
-- İşletme
+imlec.execute("""
+CREATE TABLE IF NOT EXISTS meslekler (
+    ad TEXT,
+    alan TEXT,
+    aciklama TEXT,
+    beceri TEXT
+)
+""")
 
-## Veritabanı
-Projede SQLite kullanarak iki tablo oluşturdum:
+imlec.execute("""
+CREATE TABLE IF NOT EXISTS kullanicilar (
+    id TEXT PRIMARY KEY,
+    alan TEXT
+)
+""")
 
-**meslekler:** Meslek adlarını, alanlarını, açıklamalarını ve gerekli becerilerini saklar.
+#Meslek bilgilerini ve kullanıcıların seçtikleri kariyer alanlarını saklamak için veritabanında iki tablo oluşturdum.
 
-**kullanicilar:** Kullanıcıların Discord ID bilgilerini ve seçtikleri ilgi alanlarını saklar.
+# ornek meslekleri ekleme bolumu
+imlec.execute("SELECT COUNT(*) FROM meslekler")
 
-## Kurulum
+if imlec.fetchone()[0] == 0:
+    meslekler = [
+        ("Yazilim Gelistirici",
+         "Teknoloji",
+         "Web siteleri ve uygulamalar yapar.",
+         "Python, mantik, problem cozme"),
 
-1. Python'u bilgisayarınıza yükleyin.
-2. Gerekli Discord kütüphanesini yükleyin:
+        ("Grafik Tasarimci",
+         "Sanat",
+         "Logo ve gorsel tasarimlar yapar.",
+         "Yaraticilik, tasarim programlari"),
 
-   `pip install discord.py`
+        ("Doktor",
+         "Saglik",
+         "Insanlarin sagligini korumaya yardim eder.",
+         "Biyoloji, iletisim, analiz"),
 
-3. Proje dosyasını bilgisayarınıza indirin.
-4. Kod içerisindeki `TOKEN = "token_yaz"` bölümüne kendi Discord bot tokeninizi girin.
-5. Botu çalıştırın:
+        ("Makine Muhendisi",
+         "Teknoloji",
+         "Makine ve sistemler tasarlar.",
+         "Matematik, fizik, problem cozme"),
 
-   `python bot.py`
+        ("Psikolog",
+         "Insan",
+         "Insan davranislarini anlamaya calisir.",
+         "Dinleme, iletisim, analiz"),
 
-## Kullanım
+        ("Girisimci",
+         "Isletme",
+         "Yeni is fikirleri gelistirir.",
+         "Planlama, iletisim, yaraticilik")
+    ]
 
-1. Discord sunucusunda `/basla` komutunu kullanın.
-2. Açılan menüden ilgi alanınızı seçin.
-3. Seçiminiz veritabanına kaydedilir.
-4. `/sonuc` komutunu kullanarak size uygun meslek önerisini görüntüleyin.
+    imlec.executemany(
+        "INSERT INTO meslekler VALUES (?, ?, ?, ?)",
+        meslekler
+    )
 
-## Geliştirme Amacım
-Bu projeyi geliştirirken Python ile Discord botu oluşturmayı, veritabanı kullanmayı, kullanıcı seçimlerini kaydetmeyi ve kullanıcılara otomatik meslek önerileri sunmayı öğrendim.
+db.commit()
 
-## Not
-Bu projede sunulan meslek önerileri kariyer keşfi ve bilgilendirme amacı taşımaktadır. Kesin bir kariyer yönlendirmesi değildir.
+#Veritabanında daha önce meslek eklenip eklenmediğini kontrol ettim, eğer eklenmemişse örnek meslekleri ve bilgilerini tabloya ekleyip kaydettim.
+
+
+@bot.event
+async def on_ready():
+    await komutlar.sync()
+    print("KariyerPusulasi hazir!")
+    print("Bot Discord'a baglandi.")
+
+    #Bot Discord'a bağlandığında komutları senkronize ettim ve botun hazır olduğunu belirten mesajların ekrana yazdırılmasını sağladım.
+
+@komutlar.command(
+    name="basla",
+    description="Kariyer kesfine basla"
+)
+async def basla(interaction: discord.Interaction):
+
+    secenekler = [
+        discord.SelectOption(label="Teknoloji"),
+        discord.SelectOption(label="Sanat"),
+        discord.SelectOption(label="Saglik"),
+        discord.SelectOption(label="Insan"),
+        discord.SelectOption(label="Isletme")
+    ]
+
+    menu = discord.ui.Select(
+        placeholder="Ilgi alanini sec",
+        options=secenekler
+    )
+
+    async def secim_yap(interaction2: discord.Interaction):
+        alan = menu.values[0]
+
+        db.execute(
+            "INSERT OR REPLACE INTO kullanicilar VALUES (?, ?)",
+            (str(interaction2.user.id), alan)
+        )
+        db.commit()
+
+        await interaction2.response.send_message(
+            f"Ilgi alanin: **{alan}**\n"
+            "Meslek onerilerini gormek icin `/sonuc` yaz!",
+            ephemeral=True
+        )
+
+    menu.callback = secim_yap
+
+    gorunum = discord.ui.View()
+    gorunum.add_item(menu)
+
+    await interaction.response.send_message(
+        "Merhaba! KariyerPusulasi'na hos geldin.\n"
+        "Sana uygun meslekleri bulmak icin bir alan sec:",
+        view=gorunum,
+        ephemeral=True
+    )
+
+#Kullanıcıların `/basla` komutuyla kariyer botuna başlamasını, ilgi alanlarını menüden seçmesini ve seçtikleri alanın veritabanına kaydedilmesini sağladım.
+
+
+@komutlar.command(
+    name="sonuc",
+    description="Sana uygun meslekleri goster"
+)
+async def sonuc(interaction: discord.Interaction):
+
+    kayit = db.execute(
+        "SELECT alan FROM kullanicilar WHERE id = ?",
+        (str(interaction.user.id),)
+    ).fetchone()
+
+    if kayit is None:
+        await interaction.response.send_message(
+            "Once `/basla` komutunu kullan!",
+            ephemeral=True
+        )
+        return
+
+    alan = kayit[0]
+
+    sonuc_listesi = db.execute(
+        "SELECT ad, aciklama, beceri FROM meslekler "
+        "WHERE alan = ?",
+        (alan,)
+    ).fetchall()
+
+    if not sonuc_listesi:
+        await interaction.response.send_message(
+            "Bu alanda meslek bulunamadi."
+        )
+        return
+
+    secilen = random.choice(sonuc_listesi)
+
+    mesaj = discord.Embed(
+        title="Sana bir meslek onerimiz var!",
+        description=f"**{secilen[0]}**\n{secilen[1]}",
+        color=discord.Color.blue()
+    )
+
+    mesaj.add_field(
+        name="Gerekli beceriler",
+        value=secilen[2],
+        inline=False
+    )
+
+    mesaj.set_footer(
+        text="Bu oneriler kesif amacli dir."
+    )
+
+    await interaction.response.send_message(embed=mesaj)
+
+    #Kullanıcının seçtiği ilgi alanına göre veritabanından rastgele bir meslek seçip mesleğin açıklamasını ve gerekli becerilerini Discord üzerinden göstermesini sağladım.
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    if "meslek" in message.content.lower():
+        await message.channel.send(
+            "Meslek onerisi almak icin `/basla` "
+            "ve ardindan `/sonuc` kullanabilirsin!"
+        )
+
+if TOKEN == "token_yaz":
+    print("Once TOKEN degiskenine bot tokenini yaz!")
+else:
+    bot.run(TOKEN)
+
+    #Mesajlarda "meslek" kelimesi geçtiğinde kullanıcıya botun komutlarını hatırlatan bir mesaj gönderdim ve botun token kontrolünü yaparak çalışmasını sağladım.
